@@ -37,11 +37,9 @@ sent emoanal
 
 """
 
-import pickle
-import numpy
 import jieba
 import MySQLdb
-import jieba.posseg as tagseg
+import codecs
 import sys
 reload(sys)
 sys.setdefaultencoding('utf8')
@@ -70,6 +68,8 @@ class Sent_emoanal(object):
         except Exception, e:
             print e
         self.cur = self.conn.cursor()
+        self.word_seg = jieba.lcut
+        self.dir = 'D:/dicts/'
 
 
     def _judge_odd(self, num):
@@ -94,46 +94,57 @@ class Sent_emoanal(object):
             no.
         """
         try:
-            self.cur.execute("SELECT i_id, t_article FROM finance_news")
+            self.cur.execute("SELECT i_id, t_article FROM finance_news limit 5")
         except Exception, e:
             print e
         temp = self.cur.fetchall()
-        result_id = []
-        result_text = []
+        result = []
         for line in temp:
-            result_id.append(line[0])
-            result_id.append(line[1])
-        result = list(result_id, result_text)
+            result.append([line[0], line[1].encode()])
         return result
 
-    def _word_seg(self, sent):
+    # def _word_seg(self, sent):
+    #
+    #     """sentence segmentation
+    #
+    #
+    #     Attributes:
+    #         no.
+    #     """
+    #     seg_list = jieba.cut(sent)
+    #     seg_result = ' '.join(seg_list)
+    #     return seg_result
 
-        """sentence segmentation
-
-
-        Attributes:
-            no.
-        """
-        seg_list = jieba.cut(sent)
-        seg_result = ' '.join(seg_list)
-        return seg_result
-
-    def _word_pos_tag(self, sent):
-
-        """sentence pos tagging
-
-
-        Attributes:
-            no.
-        """
-        pos_data2 = jieba.posseg.cut(sent)
-        pos_list2 = []
-        for w2 in pos_data2:
-            pos_list2.extend([w2.word.encode('utf8'), w2.flag])
-        pos_str = ' '.join(pos_list2)
-        return pos_str
+    # def _word_pos_tag(self, sent):
+    #
+    #     """sentence pos tagging
+    #
+    #
+    #     Attributes:
+    #         no.
+    #     """
+    #     pos_data2 = jieba.posseg.cut(sent)
+    #     pos_list2 = []
+    #     for w2 in pos_data2:
+    #         pos_list2.extend([w2.word.encode('utf8'), w2.flag])
+    #     pos_str = ' '.join(pos_list2)
+    #     return pos_str
 
     def _sent_seg(self, paragraph):
+
+        """sentences segmentation
+
+
+        Attributes:
+            no.
+        """
+        punt_list = '：，。！？；…'.decode('utf8')
+        for punt in punt_list:
+            paragraph.replace(punt, ' ')
+        result = paragraph.split(' ')
+        return result
+
+    def _paragraph_seg(self, article):
 
         """paragraph segmentation
 
@@ -141,32 +152,136 @@ class Sent_emoanal(object):
         Attributes:
             no.
         """
-        punt_list = '：，。！？；… '.decode('utf8')
-        for punt in punt_list:
-            paragraph.replace(punt, '')
+        temp = article.split(u'\u3000'u'\u3000')
+        result = []
+        for line in temp:
+            if len(line):
+                result.append(line)
+        return result
+
+    def _get_dicts(self, dir):
+
+        """get posdict, negdict, mostdict
+               moredict, ishdict, insuffdict
+               and inversedict
 
 
+        Attributes:
+            no.
+        """
+        dict_name = ['posdict', 'negdict', 'mostdict', 'verydict', 'moredict',
+                     'ishdict', 'insuffdict', 'inversedict']
+        dict = []
+        for name in dict_name:
+            temp = codecs.open(dir+name, 'r', 'utf8')
+            dict.append(temp.readlines())
+            temp.close()
+        return dict
 
-    #words = (words).decode('utf8')
+    def _compute_sent_socre(self, word, dict, sent_score):
 
-    #i is the position of words
-    token = 'meaningless'
-    sents = []
-    punt_list = ',.!?;~，。！？；～… '.decode('utf8')
-    for word in words:
-        if word not in punt_list:
-            i += 1
-            token = list(words[start:i+2]).pop()
-            #print token
-        elif word in punt_list and token in punt_list:
-            i += 1
-            token = list(words[start:i+2]).pop()
+        """sentiment score
+
+
+        Attributes:
+            no.
+        """
+        if word in dict[2]:
+            sent_score *= 4.0
+        elif word in dict[3]:
+            sent_score *= 3.0
+        elif word in dict[4]:
+            sent_score *= 2.0
+        elif word in dict[5]:
+            sent_score /= 2.0
+        elif word in dict[6]:
+            sent_score /= 4.0
+        elif word in dict[7]:
+            sent_score *= -1
+        return sent_score
+
+    def _transfrom_scores(self, poscount, negcount):
+
+        """sentiment score
+
+
+        Attributes:
+            no.
+        """
+        pos_count = 0
+        neg_count = 0
+        if poscount < 0 and negcount >= 0:
+            neg_count += negcount - poscount
+            pos_count = 0
+        elif negcount < 0 and poscount >= 0:
+            pos_count = poscount - negcount
+            neg_count = 0
+        elif poscount < 0 and negcount < 0:
+            neg_count = -poscount
+            pos_count = -negcount
         else:
-            sents.append(words[start:i+1])
-            start = i+1
-            i += 1
-    if start < len(words):
-        sents.append(words[start:])
-    return sents
+            pos_count = poscount
+            neg_count = negcount
+        return [pos_count, neg_count]
 
-    def
+
+
+    def sentiment_score(self, article, dict):
+
+        """sentiment score
+
+
+        Attributes:
+            no.
+        """
+        count_cent = []
+        count_para = []
+        count_article = []
+        for text in article:
+            paras = self._paragraph_seg(text[1])
+            for para in paras:
+                sents = self._sent_seg(para)
+                for sent in sents:
+                    words = self.word_seg(sent)
+                    i = 0  # index of counter
+                    a = 0  # index of emo word
+                    pos_count = 0
+                    neg_count = 0
+                    for word in words:
+                        if word in dict[0]:
+                            pos_count += 1
+                            for w in words[a:i]:
+                                pos_count = self._compute_sent_socre(w, dict, pos_count)
+                            a = i + 1
+                        elif word in dict[1]:
+                            neg_count += 1
+                            for w in words[a:i]:
+                                neg_count = self._compute_sent_socre(w, dict, pos_count)
+                            a = i + 1
+                        i += 1
+                    count_cent.append(self._transfrom_scores(pos_count, neg_count))
+                count_para.append(count_cent)
+                count_cent = []
+            count_article.append(count_para)
+            count_para = []
+        return count_article
+
+    def main(self):
+
+        """main function
+
+
+        Attributes:
+            no.
+        """
+        articles = self._get_text_from_MySQL()
+        dicts = self._get_dicts(self.dir)
+        result = self.sentiment_score(articles, dicts)
+        print result
+
+if __name__ == '__main__':
+    Emo_analysis = Sent_emoanal()
+    Emo_analysis.main()
+
+
+
