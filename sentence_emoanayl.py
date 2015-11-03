@@ -72,18 +72,18 @@ class Sent_emoanal(object):
         self.dir = 'D:/dicts/'
 
 
-    def _judge_odd(self, num):
-
-        """judge if it's an odd?
-
-
-        Attributes:
-            no.
-        """
-        if (num/2)*2 == num:
-            return 'even'
-        else:
-            return 'odd'
+    # def _judge_odd(self, num):
+    #
+    #     """judge if it's an odd?
+    #
+    #
+    #     Attributes:
+    #         no.
+    #     """
+    #     if (num/2)*2 == num:
+    #         return 'even'
+    #     else:
+    #         return 'odd'
 
     def _get_text_from_MySQL(self):
 
@@ -100,7 +100,9 @@ class Sent_emoanal(object):
         temp = self.cur.fetchall()
         result = []
         for line in temp:
-            result.append([line[0], line[1].encode()])
+            result.append([line[0], line[1]])
+        self.cur.close()
+        self.conn.close()
         return result
 
     # def _word_seg(self, sent):
@@ -140,8 +142,8 @@ class Sent_emoanal(object):
         """
         punt_list = '：，。！？；…'.decode('utf8')
         for punt in punt_list:
-            paragraph.replace(punt, ' ')
-        result = paragraph.split(' ')
+            paragraph = paragraph.replace(punt, u'\u3000')
+        result = paragraph.split(u'\u3000')
         return result
 
     def _paragraph_seg(self, article):
@@ -174,11 +176,14 @@ class Sent_emoanal(object):
         dict = []
         for name in dict_name:
             temp = codecs.open(dir+name, 'r', 'utf8')
-            dict.append(temp.readlines())
+            temps = []
+            for word in temp.readlines():
+                temps.append(word.replace('\r\n', ''))
+            dict.append(temps)
             temp.close()
         return dict
 
-    def _compute_sent_socre(self, word, dict, sent_score):
+    def _compute_sent_socre(self, word, dict, score):
 
         """sentiment score
 
@@ -187,43 +192,49 @@ class Sent_emoanal(object):
             no.
         """
         if word in dict[2]:
-            sent_score *= 4.0
+            score *= 2.0
         elif word in dict[3]:
-            sent_score *= 3.0
+            score *= 1.5
         elif word in dict[4]:
-            sent_score *= 2.0
+            score *= 1.25
         elif word in dict[5]:
-            sent_score /= 2.0
+            score *= 0.5
         elif word in dict[6]:
-            sent_score /= 4.0
+            score *= 0.25
         elif word in dict[7]:
-            sent_score *= -1
-        return sent_score
+            score *= -1
+        return score
 
-    def _transfrom_scores(self, poscount, negcount):
+    def _transfrom_scores(self, p, n):
 
-        """sentiment score
-
-
-        Attributes:
-            no.
-        """
-        pos_count = 0
-        neg_count = 0
-        if poscount < 0 and negcount >= 0:
-            neg_count += negcount - poscount
+        if p < 0 and n >= 0:
+            neg_count = n - p
             pos_count = 0
-        elif negcount < 0 and poscount >= 0:
-            pos_count = poscount - negcount
+        elif n < 0 and p >= 0:
+            pos_count = p - n
             neg_count = 0
-        elif poscount < 0 and negcount < 0:
-            neg_count = -poscount
-            pos_count = -negcount
+        elif p < 0 and n < 0:
+            neg_count = -p
+            pos_count = -n
         else:
-            pos_count = poscount
-            neg_count = negcount
+            pos_count = p
+            neg_count = n
+        if pos_count == 1:
+            pos_count = 0
+        if neg_count == 1:
+            neg_count = 0
         return [pos_count, neg_count]
 
+    # def _final_score(self, list, args):
+    #
+    #     """sentiment score
+    #
+    #
+    #     Attributes:
+    #         no.
+    #     """
+    #     if args == 'cents':
+    #         result = list[0][0][0]
 
 
     def sentiment_score(self, article, dict):
@@ -234,9 +245,9 @@ class Sent_emoanal(object):
         Attributes:
             no.
         """
-        count_cent = []
-        count_para = []
-        count_article = []
+        count_sents = []
+        count_paras = []
+        count_articles = []
         for text in article:
             paras = self._paragraph_seg(text[1])
             for para in paras:
@@ -244,27 +255,25 @@ class Sent_emoanal(object):
                 for sent in sents:
                     words = self.word_seg(sent)
                     i = 0  # index of counter
-                    a = 0  # index of emo word
-                    pos_count = 0
-                    neg_count = 0
+                    s = 0  # index of emo word
+                    pos_score = 1
+                    neg_score = 1
                     for word in words:
                         if word in dict[0]:
-                            pos_count += 1
-                            for w in words[a:i]:
-                                pos_count = self._compute_sent_socre(w, dict, pos_count)
-                            a = i + 1
+                            for w in words[s:i]:
+                                pos_score = self._compute_sent_socre(w, dict, pos_score)
+                            s = i + 1
                         elif word in dict[1]:
-                            neg_count += 1
-                            for w in words[a:i]:
-                                neg_count = self._compute_sent_socre(w, dict, pos_count)
-                            a = i + 1
+                            for w in words[s:i]:
+                                neg_score = self._compute_sent_socre(w, dict, neg_score)
+                            s = i + 1
                         i += 1
-                    count_cent.append(self._transfrom_scores(pos_count, neg_count))
-                count_para.append(count_cent)
-                count_cent = []
-            count_article.append(count_para)
-            count_para = []
-        return count_article
+                    count_sents.append(self._transfrom_scores(pos_score, neg_score))
+                count_paras.append(count_sents)
+                count_sents = []
+            count_articles.append(count_paras)
+            count_paras = []
+        return count_articles
 
     def main(self):
 
@@ -275,9 +284,10 @@ class Sent_emoanal(object):
             no.
         """
         articles = self._get_text_from_MySQL()
+        # articles = ['我爱北京天安门']
         dicts = self._get_dicts(self.dir)
         result = self.sentiment_score(articles, dicts)
-        print result
+
 
 if __name__ == '__main__':
     Emo_analysis = Sent_emoanal()

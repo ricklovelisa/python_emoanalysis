@@ -2,20 +2,8 @@ import MySQLdb
 import jieba
 import codecs
 
-def judge_odd(num):
-
-        """judge if it's an odd?
-
-
-        Attributes:
-            no.
-        """
-        if (num/2)*2 == num:
-            return 'even'
-        else:
-            return 'odd'
-
-def get_text_from_MySQL():
+word_seg = jieba.lcut
+def get_text_from_MySQL(arg):
 
         """get text from Mysql
 
@@ -28,7 +16,7 @@ def get_text_from_MySQL():
                                         charset='utf8')
         cur = conn.cursor()
         try:
-            cur.execute("SELECT i_id, t_article FROM finance_news")
+            cur.execute("SELECT i_id, t_article FROM finance_news limit "+str(arg))
         except Exception, e:
             print e
         temp = cur.fetchall()
@@ -66,16 +54,16 @@ def sent_seg(paragraph):
         result = paragraph.split(u'\u3000')
         return result
 
-def word_seg(sent):
-
-        """sentence segmentation
-
-
-        Attributes:
-            no.
-        """
-        seg_list = jieba.lcut(sent)
-        return seg_list
+# def word_seg(sent):
+#
+#         """sentence segmentation
+#
+#
+#         Attributes:
+#             no.
+#         """
+#         seg_list = jieba.lcut(sent)
+#         return seg_list
 
 def get_dicts(dir):
 
@@ -92,9 +80,91 @@ def get_dicts(dir):
         dict = []
         for name in dict_name:
             temp = codecs.open(dir+name, 'r', 'utf8')
-            dict.append(temp.readlines())
+            temps = []
+            for word in temp.readlines():
+                temps.append(word.replace('\r\n', ''))
+            dict.append(temps)
             temp.close()
         return dict
+
+def compute_sent_socre(word, dict, score):
+
+        """sentiment score
+
+
+        Attributes:
+            no.
+        """
+        if word in dict[2]:
+            score *= 2.0
+        elif word in dict[3]:
+            score *= 1.5
+        elif word in dict[4]:
+            score *= 1.25
+        elif word in dict[5]:
+            score *= 0.5
+        elif word in dict[6]:
+            score *= 0.25
+        elif word in dict[7]:
+            score *= -1
+        return score
+
+def transfrom_scores(p, n):
+
+    if p < 0 and n >= 0:
+        neg_count = n - p
+        pos_count = 0
+    elif n < 0 and p >= 0:
+        pos_count = p - n
+        neg_count = 0
+    elif p < 0 and n < 0:
+        neg_count = -p
+        pos_count = -n
+    else:
+        pos_count = p
+        neg_count = n
+    if pos_count == 1:
+        pos_count = 0
+    if neg_count == 1:
+        neg_count = 0
+    return [pos_count, neg_count]
+
+
+# text = ["我不是很喜欢北京天安门，但是我爱你。我讨厌你，非常非常讨厌！".decode('utf8'), "这样不好，你不要这样，真的不好".decode('utf8'), "这个东西不错，挺好的".decode('utf8')]
+# dir = 'D:/dicts/'
+# dict = get_dicts(dir)
+# count_words = []
+# count_sents = []
+# count_para = []
+# for para in text:
+#     sents = sent_seg(para)
+#     for sent in sents:
+#         words = word_seg(sent)
+#         i = 0  # index of counter
+#         a = 0  # index of emo word
+#         pos_count = 0
+#         neg_count = 0
+#         for word in words:
+#             if word in dict[0]:
+#                 pos_count += 1
+#                 for w in words[a:i]:
+#                     pos_count = compute_sent_socre(w, dict, pos_count)
+#                 a = i + 1
+#             elif word in dict[1]:
+#                 neg_count += 1
+#                 for w in words[a:i]:
+#                     neg_count = compute_sent_socre(w, dict, pos_count)
+#                 a = i + 1
+#             i += 1
+#         count_words.append(transfrom_scores(pos_count, neg_count))
+#     count_sents.append(count_words)
+#     count_words = []
+# count_para.append(count_sents)
+# count_sents = []
+# print count_para
+
+
+
 
 def sentiment_score(article, dict):
 
@@ -104,94 +174,37 @@ def sentiment_score(article, dict):
         Attributes:
             no.
         """
+        count_sents = []
+        count_paras = []
+        count_articles = []
         for text in article:
-            paragraphs = paragraph_seg(text[1])
-            count_1 = []
-            count_2 = []
-            count_3 = []
-            for para in paragraphs:
+            paras = paragraph_seg(text[1])
+            for para in paras:
                 sents = sent_seg(para)
                 for sent in sents:
-                    sent_seg = word_seg(sent)
-                    word_index = 0  # scan words index
-                    emo_index = 0  # emotional words index
-                    posscore_1 = 0  # pos word first score
-                    posscore_2 = 0  # pos word reversed score
-                    posscore_3 = 0  # pos word final score
-                    negscore_1 = 0
-                    negscore_2 = 0
-                    negscore_3 = 0
-                    for word in sent_seg:
+                    words = word_seg(sent)
+                    i = 0  # index of counter
+                    s = 0  # index of emo word
+                    pos_score = 1
+                    neg_score = 1
+                    for word in words:
                         if word in dict[0]:
-                            posscore_1 += 1
-                            c = 0  # inverse adverb number
-                            for i in sent_seg[emo_index:word_index]:
-                                if i in dict[2]:
-                                    posscore_1 *= 4.0
-                                elif i in dict[3]:
-                                    posscore_1 *= 3.0
-                                elif i in dict[4]:
-                                    posscore_1 *= 2.0
-                                elif i in dict[5]:
-                                    posscore_1 /= 2.0
-                                elif i in dict[6]:
-                                    posscore_1 /= 4.0
-                                elif i in dict[7]:
-                                    c += 1
-                                if judge_odd(c) == 'odd':
-                                    posscore_1 *= -1.0
-                                    posscore_2 += posscore_1
-                                    posscore_1 = 0
-                                    posscore_3 += (posscore_1 + posscore_2)
-                                    posscore_2 = 0
-                                else:
-                                    posscore_3 += (posscore_1 + posscore_2)
-                                    posscore_1 = 0
-                                emo_index += 1
+                            for w in words[s:i]:
+                                pos_score = compute_sent_socre(w, dict, pos_score)
+                            s = i + 1
                         elif word in dict[1]:
-                            negscore_1 += 1
-                            c = 0
-                            for i in sent_seg[emo_index:word_index]:
-                                if i in dict[2]:
-                                    negscore_1 *= 4.0
-                                elif i in dict[3]:
-                                    negscore_1 *= 3.0
-                                elif i in dict[4]:
-                                    negscore_1 *= 2.0
-                                elif i in dict[5]:
-                                    negscore_1 /= 2.0
-                                elif i in dict[6]:
-                                    negscore_1 /= 4.0
-                                elif i in dict[7]:
-                                    c += 1
-                                if judge_odd(c) == 'odd':
-                                    negscore_1 *= -1.0
-                                    negscore_2 += negscore_1
-                                    negscore_1 = 0
-                                    negscore_3 += (negscore_1 + negscore_2)
-                                    negscore_2 = 0
-                                else:
-                                    negscore_3 += (negscore_1 + negscore_2)
-                                    negscore_1 = 0
-                                emo_index += 1
-                            word_index += 1
-                    pos_score = 0
-                    neg_score = 0
-                    if posscore_3 < 0 and negscore_3 > 0:
-                        neg_score += (negscore_3 - posscore_3)
-                        posscore_1 = 0
-                    elif negscore_3 < 0 and posscore_3 > 0:
-                        pos_score += (posscore_3 - negscore_3)
-                        negscore_1 = 0
-                    elif negscore_3 < 0 and posscore_3 < 0:
-                        pos_score += -negscore_3
-                        neg_score += -posscore_3
-                    else:
-                        pos_score += posscore_3
-                        neg_score += negscore_3
-                    count_1.append([pos_score, neg_score])
-                count_2.append(count_1)
-                count_1 = []
-            count_3.append(count_2)
-            count_2 = []
-        return count_3
+                            for w in words[s:i]:
+                                neg_score = compute_sent_socre(w, dict, neg_score)
+                            s = i + 1
+                        i += 1
+                    count_sents.append(transfrom_scores(pos_score, neg_score))
+                count_paras.append(count_sents)
+                count_sents = []
+            count_articles.append(count_paras)
+            count_paras = []
+        return count_articles
+
+articles = get_text_from_MySQL(5)
+dicts = get_dicts('D:/dicts/')
+result = sentiment_score(articles, dicts)
+print result
