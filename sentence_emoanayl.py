@@ -40,6 +40,7 @@ sent emoanal
 import jieba
 import MySQLdb
 import codecs
+import numpy
 import sys
 reload(sys)
 sys.setdefaultencoding('utf8')
@@ -85,7 +86,7 @@ class Sent_emoanal(object):
     #     else:
     #         return 'odd'
 
-    def _get_text_from_MySQL(self):
+    def get_text_from_MySQL(self):
 
         """get text from Mysql
 
@@ -94,16 +95,18 @@ class Sent_emoanal(object):
             no.
         """
         try:
-            self.cur.execute("SELECT i_id, t_article FROM finance_news limit 5")
+            self.cur.execute("SELECT i_id, t_article FROM finance_news")
         except Exception, e:
             print e
         temp = self.cur.fetchall()
-        result = []
+        result_id = []
+        result_article = []
         for line in temp:
-            result.append([line[0], line[1]])
+            result_id.append(line[0])
+            result_article.append(line[1])
         self.cur.close()
         self.conn.close()
-        return result
+        return [result_id, result_article]
 
     # def _word_seg(self, sent):
     #
@@ -161,7 +164,7 @@ class Sent_emoanal(object):
                 result.append(line)
         return result
 
-    def _get_dicts(self, dir):
+    def get_dicts(self, dir):
 
         """get posdict, negdict, mostdict
                moredict, ishdict, insuffdict
@@ -248,8 +251,8 @@ class Sent_emoanal(object):
         count_sents = []
         count_paras = []
         count_articles = []
-        for text in article:
-            paras = self._paragraph_seg(text[1])
+        for text in article[1]:
+            paras = self._paragraph_seg(text)
             for para in paras:
                 sents = self._sent_seg(para)
                 for sent in sents:
@@ -273,7 +276,69 @@ class Sent_emoanal(object):
                 count_sents = []
             count_articles.append(count_paras)
             count_paras = []
+        # result = self._regroup_article(article[0], count_articles)
+        #　return result
         return count_articles
+
+    def _regroup_article(self, id, data):
+
+        """regroup data
+
+
+        Attributes:
+            no.
+        """
+        temp = zip(id, data)
+        dic = {}
+        for line in temp:
+            dic[str(line[0])] = line[1]
+        return dic
+
+    def _statistic(self, array):
+
+        """statistic computing
+
+
+        Attributes:
+            no.
+        """
+        np_temp = numpy.array(array)
+        pos_mean = numpy.mean(np_temp[:, 0])
+        neg_mean = numpy.mean(np_temp[:, 1])
+        pos_std = numpy.std(np_temp[:, 0])
+        neg_std = numpy.std(np_temp[:, 1])
+        pos_sum = numpy.sum(np_temp[:, 0])
+        neg_sum = numpy.sum(np_temp[:, 1])
+
+        return {'sum':[pos_sum, neg_sum], 'mean':[pos_mean, neg_mean],
+                'std':[pos_std, neg_std]}
+
+    def compute_stat(self, array, arg):
+
+        """stat
+
+
+        Attributes:
+            no.
+        """
+        paras_stat = []
+        articles_stat = []
+        paras_stat_temp = []
+        articles_stat_temp = []
+        for i in array:
+            for j in i:
+                x = self._statistic(j)
+                paras_stat_temp.append(x)
+                articles_stat_temp.append(x['sum'])
+            articles_stat.append(self._statistic(articles_stat_temp))
+            paras_stat.append(paras_stat_temp)
+            paras_stat_temp = []
+        if arg == 'paras':
+            return paras_stat
+        elif arg == 'articles':
+            return articles_stat
+        else:
+            print "invald arg.(it should be 'paras' or 'article')"
 
     def main(self):
 
@@ -283,10 +348,13 @@ class Sent_emoanal(object):
         Attributes:
             no.
         """
-        articles = self._get_text_from_MySQL()
+        articles = self.get_text_from_MySQL()
         # articles = ['我爱北京天安门']
-        dicts = self._get_dicts(self.dir)
+        dicts = self.get_dicts(self.dir)
         result = self.sentiment_score(articles, dicts)
+        stat = self.compute_stat(result, 'articles')
+        data = self._regroup_article(articles[0], stat)
+        print data
 
 
 if __name__ == '__main__':

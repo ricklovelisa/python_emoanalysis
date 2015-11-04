@@ -1,9 +1,10 @@
 import MySQLdb
 import jieba
 import codecs
+import numpy
 
 word_seg = jieba.lcut
-def get_text_from_MySQL(arg):
+def get_text_from_MySQL():
 
         """get text from Mysql
 
@@ -16,14 +17,18 @@ def get_text_from_MySQL(arg):
                                         charset='utf8')
         cur = conn.cursor()
         try:
-            cur.execute("SELECT i_id, t_article FROM finance_news limit "+str(arg))
+            cur.execute("SELECT i_id, t_article FROM finance_news")
         except Exception, e:
             print e
         temp = cur.fetchall()
-        result = []
+        result_id = []
+        result_article = []
         for line in temp:
-            result.append([line[0], line[1]])
-        return result
+            result_id.append(line[0])
+            result_article.append(line[1])
+        cur.close()
+        conn.close()
+        return [result_id, result_article]
 
 def paragraph_seg(article):
 
@@ -177,8 +182,9 @@ def sentiment_score(article, dict):
         count_sents = []
         count_paras = []
         count_articles = []
-        for text in article:
-            paras = paragraph_seg(text[1])
+        ID = 1
+        for text in article[1]:
+            paras = paragraph_seg(text)
             for para in paras:
                 sents = sent_seg(para)
                 for sent in sents:
@@ -202,9 +208,65 @@ def sentiment_score(article, dict):
                 count_sents = []
             count_articles.append(count_paras)
             count_paras = []
+            print ID
+            ID += 1
+        # result = regroup_article(article[0], count_articles)
+        # return result
         return count_articles
 
-articles = get_text_from_MySQL(5)
+def statistic(array):
+
+        """statistic computing
+
+
+        Attributes:
+            no.
+        """
+        np_temp = numpy.array(array)
+        pos_mean = numpy.mean(np_temp[:, 0])
+        neg_mean = numpy.mean(np_temp[:, 1])
+        pos_std = numpy.std(np_temp[:, 0])
+        neg_std = numpy.std(np_temp[:, 1])
+        pos_sum = numpy.sum(np_temp[:, 0])
+        neg_sum = numpy.sum(np_temp[:, 1])
+
+        return {'sum':[pos_sum, neg_sum], 'mean':[pos_mean, neg_mean],
+                'std':[pos_std, neg_std]}
+
+def regroup_article(id, article):
+
+
+    temp = zip(id, article)
+    dic = {}
+    for line in temp:
+        dic[str(line[0])] = line[1]
+    return dic
+
+def compute_stat(array, arg):
+
+    paras_stat = []
+    articles_stat = []
+    paras_stat_temp = []
+    articles_stat_temp = []
+    for i in array:
+        for j in i:
+            x = statistic(j)
+            paras_stat_temp.append(x)
+            articles_stat_temp.append(x['sum'])
+        articles_stat.append(statistic(articles_stat_temp))
+        paras_stat.append(paras_stat_temp)
+        paras_stat_temp = []
+    if arg == 'paras':
+        return paras_stat
+    elif arg == 'articles':
+        return articles_stat
+    else:
+        print "invald arg.(it should be 'paras' or 'article')"
+
+
+articles = get_text_from_MySQL()
 dicts = get_dicts('D:/dicts/')
 result = sentiment_score(articles, dicts)
+stat = compute_stat(result, 'articles')
+data = regroup_article(articles[0], stat)
 print result
