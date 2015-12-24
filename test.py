@@ -17,7 +17,7 @@ def get_text_from_MySQL():
                                         charset='utf8')
         cur = conn.cursor()
         try:
-            cur.execute("SELECT i_id, t_article FROM finance_news")
+            cur.execute("SELECT i_id, t_article FROM finance_news where i_id = 8")
         except Exception, e:
             print e
         temp = cur.fetchall()
